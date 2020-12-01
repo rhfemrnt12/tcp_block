@@ -82,6 +82,16 @@ int make_fin_packet(uint8_t* packet, uint32_t seq, uint32_t ack){
 	struct libnet_tcp_hdr* t_hdr=(struct libnet_tcp_hdr *)(packet+sizeof(struct libnet_ethernet_hdr)+ip_hdr->ip_hl*4);
 	struct pseudo_header* ps_hdr;
 
+	ps_hdr->s_addr = ip_hdr->ip_src;
+	ps_hdr->d_addr = ip_hdr->ip_dst;
+	ps_hdr->ip_proto = ip_hdr->ip_p;
+	ps_hdr->tcp_len = t_hdr->th_off*4;
+
+	unsigned int tcp_data_size = sizeof(struct pseudo_header) + t_hdr->th_off*4;
+	uint16_t* tcp_checksum_buf = (uint16_t *)malloc(tcp_data_size);
+	memcpy(tcp_checksum_buf, ps_hdr, sizeof(struct pseudo_header));
+	memcpy(tcp_checksum_buf+sizeof(struct pseudo_header), t_hdr, t_hdr->th_off*4);
+
 	uint8_t* data_ptr = (uint8_t*)t_hdr + t_hdr->th_off*4;
 
 	for(int i=0;i<6;i++)
@@ -96,6 +106,7 @@ int make_fin_packet(uint8_t* packet, uint32_t seq, uint32_t ack){
 	ip_hdr->ip_len=htons(ip_hdr->ip_hl*4+t_hdr->th_off*4+8);
 	ip_hdr->ip_ttl=0xff;
 	ip_hdr->ip_sum=0;
+	calc_checksum(ip_hdr->ip_sum, (uint16_t *)ip_hdr, ip_hdr->ip_hl*4);
 	
 	uint16_t tmp_port=t_hdr->th_dport;
 	t_hdr->th_dport=t_hdr->th_sport;
@@ -109,6 +120,7 @@ int make_fin_packet(uint8_t* packet, uint32_t seq, uint32_t ack){
 	t_hdr->th_sum=0;
 	t_hdr->th_urp=0;
 	strncpy((char*)data_ptr, (char*)message, 8);
+	calc_checksum(t_hdr->th_sum, tcp_checksum_buf, tcp_data_size);
 }
 
 int tcp_block(uint8_t* packet, uint32_t seq, uint32_t ack, uint32_t header_len, uint32_t data_len, pcap_t* handle){
